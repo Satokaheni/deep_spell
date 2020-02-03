@@ -12,13 +12,8 @@ from numpy import zeros as np_zeros
 
 from tqdm import tqdm
 
-from contractions import contractions
 
 # Parameters for the model and dataset
-MAX_SENTENCE_LENGTH = 40
-MIN_SENTENCE_LENGTH = 3
-AMOUNT_OF_NOISE = 0.2 / MAX_SENTENCE_LENGTH
-NUMBER_OF_CHARS = 100  # 75
 CHARS = list("abcdefghijklmnopqrstuvwxyz ")
 
 # Regular Expression replacement to regularize text
@@ -45,9 +40,6 @@ class DataSet:
     def preprocess(self, x):
         # lowercase
         x = x.lower()
-
-        # replace contractions
-        # x = ' '.join([contractions[w] if w in contractions else w for x in x.split()])
 
         # Normalize parenthesis, dashes, and apostrophies
         x = RE_DASH_FILTER.sub('-', x)
@@ -120,7 +112,9 @@ class DataSet:
             data = dataset.pop()
 
             inputs.append(' '.join([self.add_spelling_errors(token) for token in data.split()]))
-            targets.append(data)
+            targets.append('\t' + data + '\n')
 
-            
+        return inputs, targets
+
+    
             
