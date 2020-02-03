@@ -1,20 +1,15 @@
-from collections import Counter
 import re
 import string
-from time import time
+
+from copy import copy
 
 import numpy as np
-from numpy.random import choice as random_choice
-from numpy.random import randint as random_randint
-from numpy.random import shuffle as random_shuffle
-from numpy.random import rand
-from numpy import zeros as np_zeros 
 
 from tqdm import tqdm
 
 
 # Parameters for the model and dataset
-CHARS = list("abcdefghijklmnopqrstuvwxyz ")
+CHARS = list("abcdefghijklmnopqrstuvwxyz0123456789 ")
 
 # Regular Expression replacement to regularize text
 RE_DASH_FILTER = re.compile(r'[\-\˗\֊\‐\‑\‒\–\—\⁻\₋\−\﹣\－]', re.UNICODE)
@@ -34,7 +29,9 @@ class DataSet:
         data = self.read_dataset(dataset_filename)
 
         # generate input and targets
-        inputs, targets = self.generate_examples(data)
+        self.input_data, self.target_data = self._generate_examples(data)
+
+        self.input_data, self.target_data = self._vectorize()
 
     # preprocess the data
     def preprocess(self, x):
@@ -103,10 +100,15 @@ class DataSet:
         return token
     
     # Generate sentences with mispellings
-    def generate_examples(self, dataset):
+    def _generate_examples(self, dataset):
         print('Generating Examples...')
 
         inputs, targets = [], []
+
+        self.input_characters = set()
+
+        self.max_input_length = 0
+        self.max_output_length = 0
 
         while dataset:
             data = dataset.pop()
@@ -114,7 +116,35 @@ class DataSet:
             inputs.append(' '.join([self.add_spelling_errors(token) for token in data.split()]))
             targets.append('\t' + data + '\n')
 
+            for char in inputs[-1]:
+                self.input_characters.add(char)
+
+            self.max_input_length = max([len(inputs[-1]), self.max_input_length])
+            self.max_output_length = max([len(data[-1]), self.max_output_length])
+
+        self.target_characters = copy(self.input_characters)
+        self.target_characters.add('\t')
+        self.target_characters.add('\n')
+
+        self.char2id = dict([(char, i) for i, char in enumerate(self.target_characters)])
+        self.num_input_tokens = len(self.input_characters)
+        self.num_output_tokens = len(self.target_characters)
+
         return inputs, targets
 
-    
-            
+    # vectorize data
+    def _vectorize(self):
+        input_vector = np.zeros((len(self.input_data), self.max_input_length, self.num_input_tokens), dtype='float32')
+        output_vector = np.zeros((len(self.target_data), self.max_output_length, self.num_output_tokens), dtype='float32')
+
+        for i, (input_text, target_text) in enumerate(zip(self.input_data, self.target_data)):
+            for t, char in enumerate(input_text):
+                input_vector[i, t, self.char2id[char]] = 1.
+            input_vector[i, t + 1, self.char2id[' ']] = 1.
+
+            for t, char in enumerate(target_text):
+                if t > 0:
+                    output_vector[i, t-1, self.char2id[char]] = 1.
+                output_vector[i, t:, self.char2id[' ']] = 1.
+
+        return input_vector, output_vector
