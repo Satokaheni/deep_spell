@@ -3,6 +3,7 @@ import numpy as np
 import spacy
 
 nlp = spacy.load('en_core_web_sm')
+CHARS = 'abcdefghijklmnopqrstuvwxyz'
 
 
 # Create Encoding and Decoding Dictionary for inputs and ouputs
@@ -51,10 +52,10 @@ def preprocess_sentence(sentence):
 def generate_errors(sentence):
     '''
         first decide how many imputations to make then randomly decide between 
-        - removing a space
-        - removing a character in a word
-        - swapping two characters in a word
-        - adding a character to a word
+            1. removing a space 
+            2. removing a character in a word 
+            3. swapping two characters in a word 
+            4. adding a character to a word
     '''
 
     # determine number of imputations we'll max out at 4
@@ -62,3 +63,11 @@ def generate_errors(sentence):
 
     # determine which errors to create
     errors = np.random.choice([1, 2, 3, 4], size=number_imps)
+
+    # remove a space
+    # randomly choose a space to remove
+    sent_split = sentence.split()
+    remove = np.random.randint(0, len(sent_split)-1)
+
+    sentence = ' '.join(sent_split[:remove+1]) + ' '.join(sent_split[remove+1:])
+    
