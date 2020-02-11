@@ -70,4 +70,7 @@ def generate_errors(sentence):
     remove = np.random.randint(0, len(sent_split)-1)
 
     sentence = ' '.join(sent_split[:remove+1]) + ' '.join(sent_split[remove+1:])
+
+    # Remove a character from a word
+    # randomly choose a word
     
