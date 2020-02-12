@@ -1,6 +1,8 @@
 import numpy as np
-
+import sys
 import spacy
+
+from tqdm import tqdm
 
 nlp = spacy.load('en_core_web_sm')
 CHARS = 'abcdefghijklmnopqrstuvwxyz'
@@ -28,7 +30,7 @@ def create_encode_decode_tables(input_data):
 def encode_sentences(encode_dict, sentences, max_sent_length):
     
     encoded_sentences = np.zeros((len(sentences), max_sent_length))
-    for i in range(len(sentences)):
+    for i in tqdm(range(len(sentences))):
         for j in range(min(len(sentences[i]), max_sent_length)):
             encoded_sentences[i, j] = encode_dict[sentences[i][j]]
 
@@ -80,29 +82,34 @@ def generate_errors(sentence):
             allowed_words.append(i)
     
     word_choices = np.random.choice(allowed_words, size=len(non_space_errors))
-
     # iterate through words being misspelled
     for word in word_choices:
+        try:
+            # randomly choose an option of remove, swap or add
+            option = np.random.randint(1, 3)
+            
+            # randomly remove a character
+            if option == 1:
+                char_choice = np.random.randint(0, len(sent_split[word]))
+                sent_split[word] = sent_split[word][:char_choice] + sent_split[word][char_choice+1:]
 
-        # randomly choose an option of remove, swap or add
-        option = np.random.randint(1, 3)
-        
-        # randomly remove a character
-        if option == 1:
-            char_choice = np.random.randint(0, len(sent_split[word]))
-            sent_split[word] = sent_split[word][:char_choice] + sent_split[word][char_choice+1:]
+            # randomly swap two characters 
+            elif option == 2:
+                char_choice = np.random.randint(0, len(sent_split[word])-1)
+                sent_split[word] = sent_split[word][:char_choice] + sent_split[word][char_choice+1] + sent_split[word][char_choice] + sent_split[char_choice+2:]
 
-        # randomly swap two characters 
-        elif option == 2:
-            char_choice = np.random.randint(0, len(sent_split[word])-1)
-            sent_split[word] = sent_split[word][:char_choice] + sent_split[word][char_choice+1] + sent_split[word][char_choice] + sent_split[char_choice+2:]
-
-        # randomly add a character
-        else:
-            char_choice = np.random.randint(0, len(sent_split[word]))
-            added_char = int(np.random.randint(0, 26, size=1))
-            added_char = CHARS[added_char]
-            sent_split[word] = sent_split[word][:char_choice] + added_char + sent_split[char_choice:]
+            # randomly add a character
+            else:
+                char_choice = np.random.randint(0, len(sent_split[word]))
+                added_char = int(np.random.randint(0, 26, size=1))
+                added_char = CHARS[added_char]
+                sent_split[word] = sent_split[word][:char_choice] + added_char + sent_split[char_choice:]
+        except:
+            print(sent_split)
+            print(word_choices)
+            print(word)
+            print(sent_split[word])
+            sys.exit(0)
 
     # remove spaces last
     # remove a space/spaces
@@ -121,17 +128,25 @@ def generate_errors(sentence):
 def create_training_data(input_data):
     
     # preprocess data
-    preproccesed_data = [preprocess_sentence(x) for x in input_data]
+    print('Preprocessing Data...')
+    preproccesed_data = []
+    for sent in tqdm(input_data):
+        preproccesed_data.append(preprocess_sentence(sent))
 
     # create spelling errors
-    encoder_data = [generate_errors(x) for x in preproccesed_data]
+    print('Generating Spelling Errors...')
+    encoder_data = []
+    for sent in tqdm(preproccesed_data):
+        encoder_data.append(generate_errors(sent))
     target_data = preproccesed_data
 
     # encoder input
+    print('Encoding Input Data...')
     encoding_w2id, encoding_id2w, encoding_dict_len = create_encode_decode_tables(encoder_data)
     encoder_data = encode_sentences(encoding_w2id, encoder_data, max_sent_length=200)
 
     # target output
+    print('Encoding Output Data...')
     decoder_w2id, decoder_id2w, decoder_dict_len = create_encode_decode_tables(target_data)
     target_data = encode_sentences(decoder_w2id, target_data, max_sent_length=200)
 
