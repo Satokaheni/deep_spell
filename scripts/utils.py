@@ -1,27 +1,28 @@
 import numpy as np
 import sys
 import spacy
+import traceback
+import string
+import math
+import re
 
 from tqdm import tqdm
 
 nlp = spacy.load('en_core_web_sm')
 CHARS = 'abcdefghijklmnopqrstuvwxyz'
+allowed_chars = 'abcdefghijklmnopqrstuvwxyz0123456789 {}'.format(string.punctuation)
 START_CHAR = 1
 PAD_CHAR = 0
 
-
 # Create Encoding and Decoding Dictionary for inputs and ouputs
 # Use 2 as start since 1 will be the start of sentence token and 0 is padding
-def create_encode_decode_tables(input_data):
+def create_encode_decode_tables():
 
     encoding_dict = {}
-    decoding_dict = {}
+    for char in allowed_chars:
+        encoding_dict[char] = 2 + len(encoding_dict)
 
-    for sent in input_data:
-        for char in sent:
-            if char not in encoding_dict:
-                encoding_dict[char] = 2 + len(encoding_dict)
-                decoding_dict[2 + len(encoding_dict)] = char
+    decoding_dict = {i: char for char, i in encoding_dict.items()}
 
     return encoding_dict, decoding_dict, len(encoding_dict) + 2
 
@@ -46,10 +47,33 @@ def decode_sentence(decode_dict, sentence):
 # function to preprocess a sentence before encoding
 def preprocess_sentence(sentence):
 
+    # convert to unicode characters
+    sentence = re.sub(r'[“”]', '"', sentence)
+    sentence = re.sub(r'[‘ˈ]', "'", sentence)
+    sentence = re.sub(r'[‐ー]', '-', sentence)
+    sentence = re.sub(r'[？]', '?', sentence)
+    sentence = re.sub(r'[ر]', ',', sentence)
+
+    original_length = len(sentence)
+
+    # remove all non english characters, numbers, and punctuation
+    sentence = re.sub("([^\x00-\x7F])+",'',sentence)
+
+    if original_length > len(sentence):
+        return ''
+
     # We are going to replace all proper nouns with special tokens
     # also we are going to lowercase
     sent = nlp(sentence)
-    return ' '.join([w.text.lower() if w.tag_ != 'NNP' else '<nnp>' for w in sent])
+    sent = ' '.join([w.text.lower() if w.tag_ != 'NNP' else '<nnp>' for w in sent])
+    sent = sent.replace(' \'', '\'')
+    
+    # spacy creates spaces for punctuation so remove them
+    for punc in list(string.punctuation):
+        sent = sent.replace(' '+punc, punc)
+    
+    sent = ' '.join([w for w in sent.split() if w != ''])
+    return sent
 
 
 # function to generate spelling errors
@@ -62,29 +86,35 @@ def generate_errors(sentence):
             4. adding a character to a word
     '''
 
-    # determine number of imputations we'll max out at 4
-    number_imps = np.random.randint(1, 4, size=1)
-
-    # determine which errors to create
-    errors = np.random.choice([1, 2, 3, 4], size=number_imps)
-
     # split the sentence by spaces to make it easier for choices
     sent_split = sentence.split()
+
+    # determine number of imputations we'll max out at 30% of the length of the sentence
+    num_errors = math.ceil(len(sent_split) * .3)
+    number_imps = np.random.randint(1, num_errors+1, size=1)
+
+    # determine which errors to create
+    possible_errors = [1, 2, 3, 4]
+    if len(sent_split) == 1:
+        possible_errors.pop(0)
+
+    errors = np.random.choice(possible_errors, size=number_imps)
 
     # randomly choose a words for the errors that will happen
     # allow replacement multiple mispellings for the same word
     non_space_errors = [e for e in errors if e != 1]
     
-    # remove <nnp> special tokens as choices
-    allowed_words = []
-    for i in range(len(sent_split)):
-        if sent_split[i] != '<nnp>':
-            allowed_words.append(i)
-    
-    word_choices = np.random.choice(allowed_words, size=len(non_space_errors))
     # iterate through words being misspelled
-    for word in word_choices:
-        try:
+    for _ in range(len(non_space_errors)):
+            # remove <nnp> special tokens as choices and words that are only 1 in length
+        allowed_words = []
+        for i in range(len(sent_split)):
+            if not '<nnp>' in sent_split[i] and len(sent_split[i]) > 1:
+                allowed_words.append(i)
+        
+        if len(allowed_words) >= 1:
+            word = np.random.choice(allowed_words, size=1)[0]
+
             # randomly choose an option of remove, swap or add
             option = np.random.randint(1, 3)
             
@@ -96,30 +126,32 @@ def generate_errors(sentence):
             # randomly swap two characters 
             elif option == 2:
                 char_choice = np.random.randint(0, len(sent_split[word])-1)
-                sent_split[word] = sent_split[word][:char_choice] + sent_split[word][char_choice+1] + sent_split[word][char_choice] + sent_split[char_choice+2:]
+                sent_split[word] = sent_split[word][:char_choice] + sent_split[word][char_choice+1] + sent_split[word][char_choice] + sent_split[word][char_choice+2:]
 
             # randomly add a character
             else:
                 char_choice = np.random.randint(0, len(sent_split[word]))
                 added_char = int(np.random.randint(0, 26, size=1))
                 added_char = CHARS[added_char]
-                sent_split[word] = sent_split[word][:char_choice] + added_char + sent_split[char_choice:]
-        except:
-            print(sent_split)
-            print(word_choices)
-            print(word)
-            print(sent_split[word])
-            sys.exit(0)
+                sent_split[word] = sent_split[word][:char_choice] + added_char + sent_split[word][char_choice:]
+
 
     # remove spaces last
     # remove a space/spaces
+    # or add a character instead of a space
     space_removals = [e for e in errors if e == 1]
     for _ in space_removals:
+        option = np.random.randint(0, 1)
 
+        space_choice = np.random.randint(0, len(sent_split)-1)
         # randomly choose a space to remove
-        remove = np.random.randint(0, len(sent_split)-1)
-        sentence = ' '.join(sent_split[:remove+1]) + ' '.join(sent_split[remove+1:])
-        sent_split = sentence.split()
+        if option == 0:
+            sentence = ' '.join(sent_split[:space_choice+1]) + ' '.join(sent_split[space_choice+1:])
+            sent_split = sentence.split()
+        # insert a random character
+        else:
+            random_char = np.random.choice(list(range(len(CHARS))), size=1)
+            sentence = ' '.join(sent_split[:space_choice]) + list(CHARS)[random_char] + ' '.join(sent_split[space_choice:])
 
     return ' '.join(sent_split)
 
@@ -131,7 +163,9 @@ def create_training_data(input_data):
     print('Preprocessing Data...')
     preproccesed_data = []
     for sent in tqdm(input_data):
-        preproccesed_data.append(preprocess_sentence(sent))
+        result = preprocess_sentence(sent)
+        if len(result) > 0:
+            preproccesed_data.append(result)
 
     # create spelling errors
     print('Generating Spelling Errors...')
@@ -142,15 +176,19 @@ def create_training_data(input_data):
 
     # encoder input
     print('Encoding Input Data...')
-    encoding_w2id, encoding_id2w, encoding_dict_len = create_encode_decode_tables(encoder_data)
+    encoding_w2id, encoding_id2w, _ = create_encode_decode_tables()
     encoder_data = encode_sentences(encoding_w2id, encoder_data, max_sent_length=200)
 
     # target output
     print('Encoding Output Data...')
-    decoder_w2id, decoder_id2w, decoder_dict_len = create_encode_decode_tables(target_data)
-    target_data = encode_sentences(decoder_w2id, target_data, max_sent_length=200)
+    target_data = encode_sentences(encoding_w2id, target_data, max_sent_length=200)
 
-    # decoder 
+    return encoder_data, target_data, {'id2w': encoding_id2w, 'w2id': encoding_w2id}
+
+
+# Function to prep data for model 
+def create_model_data(encoder_data, target_data, decoder_dict_len):
+
     decoder_input = np.zeros_like(target_data)
     decoder_input[:, 1:] = encoder_data[:, :-1]
     decoder_input[:, 0] = START_CHAR
@@ -159,8 +197,7 @@ def create_training_data(input_data):
     x = [encoder_data, decoder_input]
     y = [decoder_output]
 
-    return x, y, {'id2w': encoding_id2w, 'w2id': encoding_w2id}, {'id2w': decoder_id2w, 'w2id': decoder_w2id}
-
+    return x, y
 
 # function to generate encoded outputs for inputs for testing
 def generate(texts, encoding_w2id, model, max_input_len, max_output_len, beam_size=3, max_beams=3, min_cut_off_len=10, cut_off_ratio=1.5):
@@ -246,3 +283,17 @@ def infer(texts, model, encoding_w2id, decoding_id2w, max_input_len, max_output_
             outputs[-1].append({'sequence': decode_sentence(decoding_id2w, decoder_output[0]), 'prob': np.prod(probs)})
 
     return outputs
+
+
+# calculate accuracy
+def accuracy_score(y_true, y_preds):
+    accuracy = []
+    
+    # go through each sample
+    for i in range(len(y_true)):
+        correct = []
+        for j in range(len(y_true[i])):
+            correct.append(int(y_true[i][j] == y_preds[i][j]))
+        accuracy.append(sum(correct)/len(correct))
+
+    return np.array(accuracy).mean()

@@ -1,5 +1,4 @@
 from utils import create_training_data
-from model import build_model
 
 import pickle
 

@@ -26,7 +26,9 @@ def build_model(max_input_len, input_vocab_size, max_output_len, output_vocab_le
 
     decoder_combined_context = layers.concatenate([context, decoder])
 
-    output = layers.TimeDistributed(layers.Dense(128, activation='tanh'))(decoder_combined_context)
+    decoder_combined_dropout = layers.Dropout(.5)(decoder_combined_context)
+
+    output = layers.TimeDistributed(layers.Dense(128, activation='tanh'))(decoder_combined_dropout)
     output = layers.TimeDistributed(layers.Dense(output_vocab_len, activation='softmax'))(output)
 
     model = Model(inputs=[encoder_input, decoder_input], outputs=[output])
